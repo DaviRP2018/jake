@@ -1,6 +1,7 @@
 import sys
 
 from bot.main import Bot
+from bot.training import ChatbotTrainer
 
 
 class ManagementUtility:
@@ -24,7 +25,8 @@ class ManagementUtility:
             bot = Bot()
             bot.run()
         elif subcommand == "train":
-            pass
+            bot_training = ChatbotTrainer()
+            bot_training.run_training()
 
         else:
             sys.stdout.write("Command not found")

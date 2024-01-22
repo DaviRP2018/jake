@@ -1,4 +1,3 @@
-import pickle
 import random
 
 import nltk
@@ -12,92 +11,99 @@ from pymongo import MongoClient
 # nltk.download('punkt')
 # nltk.download('wordnet')
 
-lemmatizer = WordNetLemmatizer()
 
-client = MongoClient("localhost", 27017)
-jake_db = client.jake_database
-intents_collection = jake_db.intents
-intents = intents_collection.find()
+class ChatbotTrainer:
+    def __init__(self):
+        self.lemmatizer = WordNetLemmatizer()
 
-# creating empty lists to store data
-words = []
-classes = []
-documents = []
-ignore_letters = ["?", "!", ".", ","]
-for intent in intents:
-    for pattern in intent["patterns"]:
-        # separating words from patterns
-        word_list = nltk.word_tokenize(pattern)
-        words.extend(word_list)  # and adding them to words list
+        self.words = []
+        self.classes = []
+        self.documents = []
+        self.ignore_letters = ["?", "!", ".", ","]
 
-        # associating patterns with respective tags
-        documents.append((word_list, intent["tag"]))
+    def load_intents(self):
+        with MongoClient("localhost", 27017) as client:
+            jake_db = client.jake_database
+            intents_collection = jake_db.intents
+            intents = list(intents_collection.find())
+        return intents
 
-        # appending the tags to the class list
-        if intent["tag"] not in classes:
-            classes.append(intent["tag"])
+    def load_data_from_mongo(self, intents):
+        for intent in intents:
+            for pattern in intent["patterns"]:
+                word_list = nltk.word_tokenize(pattern)
+                self.words.extend(word_list)
+                self.documents.append((word_list, intent["tag"]))
 
-# storing the root words or lemma
-words = [
-    lemmatizer.lemmatize(word) for word in words if word not in ignore_letters
-]
-words = sorted(set(words))
+                if intent["tag"] not in self.classes:
+                    self.classes.append(intent["tag"])
 
-# saving the words and classes list to binary files
-pickle.dump(words, open("words.pkl", "wb"))
-pickle.dump(classes, open("classes.pkl", "wb"))
+    def preprocess_data(self):
+        self.words = [
+            self.lemmatizer.lemmatize(word)
+            for word in self.words
+            if word not in self.ignore_letters
+        ]
+        self.words = sorted(set(self.words))
 
-# we need numerical values of the
-# words because a neural network
-# needs numerical values to work with
-training = []
-output_empty = [0] * len(classes)
-for document in documents:
-    bag = []
-    word_patterns = document[0]
-    word_patterns = [
-        lemmatizer.lemmatize(word.lower()) for word in word_patterns
-    ]
-    for word in words:
-        bag.append(1) if word in word_patterns else bag.append(0)
+    def prepare_training_data(self):
+        training = []
+        output_empty = [0] * len(self.classes)
 
-    # making a copy of the output_empty
-    output_row = list(output_empty)
-    output_row[classes.index(document[1])] = 1
-    training.append([bag, output_row])
-random.shuffle(training)
+        for document in self.documents:
+            bag = []
+            word_patterns = document[0]
+            word_patterns = [
+                self.lemmatizer.lemmatize(word.lower())
+                for word in word_patterns
+            ]
 
-# Convert training list to numpy arrays
-train_x = np.array([i[0] for i in training])
-train_y = np.array([i[1] for i in training])
+            for word in self.words:
+                bag.append(1) if word in word_patterns else bag.append(0)
 
+            output_row = list(output_empty)
+            output_row[self.classes.index(document[1])] = 1
+            training.append([bag, output_row])
 
-# creating a Sequential machine learning model
-model = Sequential()
-model.add(Dense(128, input_shape=(len(train_x[0]),), activation="relu"))
-model.add(Dropout(0.5))
-model.add(Dense(64, activation="relu"))
-model.add(Dropout(0.5))
-model.add(Dense(len(train_y[0]), activation="softmax"))
+        random.shuffle(training)
+        self.train_x = np.array([i[0] for i in training])
+        self.train_y = np.array([i[1] for i in training])
 
-# compiling the model
-optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-model.compile(
-    loss=tf.keras.losses.BinaryCrossentropy(),
-    optimizer=optimizer,
-    metrics=[
-        tf.keras.metrics.BinaryAccuracy(),
-        tf.keras.metrics.FalseNegatives(),
-    ],
-)
-hist = model.fit(
-    np.array(train_x), np.array(train_y), epochs=600, batch_size=5, verbose=1
-)
+    def build_and_train_model(self):
+        model = Sequential()
+        model.add(
+            Dense(128, input_shape=(len(self.train_x[0]),), activation="relu")
+        )
+        model.add(Dropout(0.5))
+        model.add(Dense(64, activation="relu"))
+        model.add(Dropout(0.5))
+        model.add(Dense(len(self.train_y[0]), activation="softmax"))
 
-# saving the model
-model.save("chatbotmodel.keras", hist)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+        model.compile(
+            loss=tf.keras.losses.BinaryCrossentropy(),
+            optimizer=optimizer,
+            metrics=[
+                tf.keras.metrics.BinaryAccuracy(),
+                tf.keras.metrics.FalseNegatives(),
+            ],
+        )
 
-# print statement to show the
-# successful training of the Chatbot model
-print("Yay!")
-client.close()
+        hist = model.fit(
+            np.array(self.train_x),
+            np.array(self.train_y),
+            epochs=600,
+            batch_size=5,
+            verbose=1,
+        )
+
+        model.save("chatbotmodel.keras", hist)
+
+    def run_training(self):
+        print("Training Chatbot Model...")
+        intents = self.load_intents()
+        self.load_data_from_mongo(intents)
+        self.preprocess_data()
+        self.prepare_training_data()
+        self.build_and_train_model()
+        print("Chatbot Model Trained Successfully!")
