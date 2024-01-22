@@ -1,5 +1,3 @@
-# importing the required modules.
-import json
 import pickle
 import random
 
@@ -9,21 +7,24 @@ import tensorflow as tf
 from keras.layers import Dense, Dropout
 from keras.models import Sequential
 from nltk.stem import WordNetLemmatizer
+from pymongo import MongoClient
 
 # nltk.download('punkt')
 # nltk.download('wordnet')
 
 lemmatizer = WordNetLemmatizer()
 
-# reading the json.intense file
-intents = json.loads(open("intents.json").read())
+client = MongoClient("localhost", 27017)
+jake_db = client.jake_database
+intents_collection = jake_db.intents
+intents = intents_collection.find()
 
 # creating empty lists to store data
 words = []
 classes = []
 documents = []
 ignore_letters = ["?", "!", ".", ","]
-for intent in intents["intents"]:
+for intent in intents:
     for pattern in intent["patterns"]:
         # separating words from patterns
         word_list = nltk.word_tokenize(pattern)
@@ -99,3 +100,4 @@ model.save("chatbotmodel.keras", hist)
 # print statement to show the
 # successful training of the Chatbot model
 print("Yay!")
+client.close()

@@ -1,4 +1,3 @@
-import json
 import pickle
 import random
 
@@ -6,15 +5,19 @@ import nltk
 import numpy as np
 from keras.models import load_model
 from nltk.stem import WordNetLemmatizer
+from pymongo import MongoClient
 
 ERROR_THRESHOLD = 0.25
 
 
 lemmatizer = WordNetLemmatizer()
-intents = json.loads(open("intents.json").read())
 words = pickle.load(open("words.pkl", "rb"))
 classes = pickle.load(open("classes.pkl", "rb"))
 model = load_model("chatbotmodel.keras")
+
+client = MongoClient("localhost", 27017)
+jake_db = client.jake_database
+intents_collection = jake_db.intents
 
 
 def clean_up_sentences(sentence):
@@ -46,9 +49,8 @@ def predict_class(sentence):
 
 def get_response(intents_list, intents_json):
     tag = intents_list[0]["intent"]
-    list_of_intents = intents_json["intents"]
     result = ""
-    for i in list_of_intents:
+    for i in intents_json:
         if i["tag"] == tag:
             result = random.choice(i["responses"])
             break
@@ -57,8 +59,17 @@ def get_response(intents_list, intents_json):
 
 print("Chatbot is up!")
 
-while True:
-    message = input("")
-    ints = predict_class(message)
-    res = get_response(ints, intents)
-    print(res)
+try:
+    intents_list = list(intents_collection.find())
+
+    while True:
+        message = input("")
+        ints = predict_class(message)
+        print(ints)
+        res = get_response(ints, intents_list)
+        print(res)
+
+except KeyboardInterrupt:
+    print("Exiting")
+finally:
+    client.close()
