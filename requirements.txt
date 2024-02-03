@@ -1,8 +1,1 @@
-# Dev
 pre-commit
-
-numpy==1.26.3
-nltk
-keras==3.0.4
-tensorflow
-pymongo
